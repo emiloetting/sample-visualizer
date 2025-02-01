@@ -32,6 +32,11 @@ class VispyWidget(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.canvas.native)
 
+        #initialize view and scatter to be updated
+        self.view = self.canvas.central_widget.add_view()
+        self.scatter = scene.visuals.Markers()
+        self.view.add(self.scatter)
+
     def set_camera(self, dimensions):
         """Adapts Plot-Camera to the given dimensions"""
         if dimensions == 2:
