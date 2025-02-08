@@ -177,6 +177,15 @@ class MainWindow(QMainWindow):
         self.dims_to_plot = int(self.dimensions.currentText())
         control_layout.addWidget(QLabel("Dimensions"), 4, 0)
         control_layout.addWidget(self.dimensions, 4, 1)
+
+        #Widget für File-Name
+        self.file_name_label = QLabel("File Name: " + FILE_PATH) 
+        self.file_name_label.setWordWrap(True)
+        self.file_name_label.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.TextSelectableByKeyboard)
+        control_layout.addWidget(self.file_name_label, 4, 2, 1, 2)
+
+        #Widget für Bild der Sounddatei als Soundwave
+
         
         # Input-Box for Scaler
         self.scaler = QComboBox()
