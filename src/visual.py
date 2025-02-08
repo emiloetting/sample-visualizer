@@ -4,12 +4,13 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QGridLayout,
     QPushButton, QSlider, QLabel, QComboBox
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from vispy import scene
 import vispy
 import data_prep as dp
 import dim_clustering as dc
 import os
+from scipy.spatial.distance import cdist
 
 # Constants
 FILE_PATH = os.path.join(dp.CSV_OUTPUT_FOLDER, dp.OUTPUT_CSV_NAME)
@@ -31,16 +32,24 @@ df = dc.go(
     min_samples=DEFAULT_MIN_SAMPLES,
     scaler=DEFAULT_SCALER
 )
+
 DEFAULT_LABELS = df['label'].to_numpy()
 DEFAULT_DATA = df.drop(columns=['label']).to_numpy()
+DEFAULT_DATA_FRAME = df.copy()
 
 
 # Vispy-Widget, das als Stub für die 3D-Visualisierung dient
 class VispyWidget(QWidget):
+    sampleSelected = Signal(str)
+
     def __init__(self, parent=None, dimensions=DEFAULT_DIMENSIONS, labels=DEFAULT_LABELS):
         super().__init__(parent)
         #safe dimensions to plot
+        self.current_data_frame = DEFAULT_DATA_FRAME
+        self.current_labels = DEFAULT_LABELS
         self.dims_to_plot = dimensions
+        self.plot_data = DEFAULT_DATA
+        self.selected_sample = None
 
         # Create Vispy Canvas
         self.canvas = scene.SceneCanvas(keys='interactive', bgcolor='#0C0714', parent=self)
@@ -85,44 +94,72 @@ class VispyWidget(QWidget):
             self.view.camera = scene.cameras.TurntableCamera(fov=45, elevation=30, azimuth=30)
         self.dims_to_plot = dimensions
         self.canvas.update()
+        return
     
     def update_visualization(self, new_data, labels, dimensions):
+
+        self.current_data_frame = new_data.copy() # DataFrame sichern
+
         # Convert new_data to numpy array, only use Positional Data
         if self.dims_to_plot != dimensions:
             self.set_camera(dimensions)  # Switch Camera if Dimensions change
 
+        #für plotting: DataFrame zu NumPy Array
         if self.dims_to_plot == 2:
-            new_clustering = new_data.to_numpy()[:, :2]
+            self.plot_data = new_data.to_numpy()[:, :2]
         elif self.dims_to_plot == 3:
-            new_clustering = new_data.to_numpy()[:, :3]
+            self.plot_data = new_data.to_numpy()[:, :3]
 
         if labels is None:
             raise ValueError('Labels of None Value not supported')
-        if len(labels) != len(new_clustering):
+        if len(labels) != len(self.plot_data):
             raise ValueError('Labels and data length do not match.')
+        
+        self.current_labels = labels
         
         # Normalizing Labels to [0,1] -> for Color Mapping
         norm_labels = (labels - labels.min()) / (labels.max() - labels.min() + 1e-10)
         color_map = vispy.color.get_colormap(COLORMAP)
         plot_colors = color_map.map(norm_labels)#[:, :3]
-        self.scatter.set_data(new_clustering, edge_color='black', face_color=plot_colors, size=5)
+        self.scatter.set_data(self.plot_data, edge_color='black', face_color=plot_colors, size=5)
 
         self.canvas.update()
+        return
 
     def on_mouse_click(self, event):
         pos = event.pos
         tr = self.scatter.get_transform(map_from='canvas', map_to='visual')
-        pos_in_data = tr.map(pos)
-        x = pos_in_data[0]
-        y = pos_in_data[1]
-        z = pos_in_data[2] #Falls 2D Plot -> z egal
-        print(f'Clicked on: {x}, {y}, {z}') if self.dims_to_plot == 3 else print(f'Clicked on: {x}, {y}') #Plot berücksichtigen
-        
-   
+        # Extrahiere den geklickten Punkt als Vektor
+        pos_in_data = np.array(tr.map(pos), dtype=float).flatten()
+        if self.dims_to_plot == 3:
+            pos_in_data = pos_in_data[:3]
+        elif self.dims_to_plot == 2:
+            pos_in_data = pos_in_data[:2]
+        print("Clicked on:", pos_in_data)
+
+        # Extrahiere und konvertiere die zu vergleichenden Datenpunkte in float
+        data_points = self.plot_data[:, :self.dims_to_plot].astype(float)
+
+        # Umwandeln des geklickten Punktes für cdist
+        pos_vec = pos_in_data.reshape(1, -1).astype(float)
+        distances = cdist(data_points, pos_vec, metric='euclidean').flatten()
+        closest_point = np.argmin(distances)
+
+        closest_sample = self.current_data_frame.iloc[closest_point]['filename']
+        print(f'Closest Sample: {closest_sample}\n')
+        self.selected_sample = closest_sample
+        self.sampleSelected.emit(closest_sample)
+    
+
+
 # Hauptfenster mit Steuerungselementen
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+        self.current_data = DEFAULT_DATA
+        self.current_labels = DEFAULT_LABELS
+
+        #Titel des Fensters
         self.setWindowTitle("Audio Clustering Visualisierung")
         
         # Zentrales Widget und Layout
@@ -133,6 +170,7 @@ class MainWindow(QMainWindow):
         # Vispy-Widget hinzufügen
         self.vispy_widget = VispyWidget()
         main_layout.addWidget(self.vispy_widget, stretch=1)
+        self.vispy_widget.sampleSelected.connect(self.update_file_name) # Um Sample-Namen zu aktualisieren
         
         # Steuerungspanel für Parameter
         control_widget = QWidget()
@@ -192,7 +230,7 @@ class MainWindow(QMainWindow):
         control_layout.addWidget(self.dimensions, 4, 1)
 
         #Widget für File-Name
-        self.file_name_label = QLabel("File Name: " + FILE_PATH) 
+        self.file_name_label = QLabel("No sample selected yet")
         self.file_name_label.setWordWrap(True)
         self.file_name_label.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.TextSelectableByKeyboard)
         control_layout.addWidget(self.file_name_label, 4, 2, 1, 2)
@@ -239,8 +277,13 @@ class MainWindow(QMainWindow):
             raise ValueError('Labels and data length do not match.')
 
         # Direktes Update ohne das Widget neu zu erstellen
+        self.current_data = new_data
+        self.current_labels = labels
         self.vispy_widget.update_visualization(new_data=new_data, labels=labels, dimensions=dimensions)
-
+        return
+    
+    def update_file_name(self, sample_name: str):
+        self.file_name_label.setText("Current Sample: " + sample_name)
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
