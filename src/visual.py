@@ -46,6 +46,9 @@ class VispyWidget(QWidget):
         self.canvas = scene.SceneCanvas(keys='interactive', bgcolor='#0C0714', parent=self)
         self.canvas.create_native()
         self.canvas.native.setParent(self)
+
+        # Connect Mouse Click Event
+        self.canvas.events.mouse_press.connect(self.on_mouse_click)
         
         # Canvas Layout
         layout = QVBoxLayout(self)
@@ -106,6 +109,16 @@ class VispyWidget(QWidget):
 
         self.canvas.update()
 
+    def on_mouse_click(self, event):
+        pos = event.pos
+        tr = self.scatter.get_transform(map_from='canvas', map_to='visual')
+        pos_in_data = tr.map(pos)
+        x = pos_in_data[0]
+        y = pos_in_data[1]
+        z = pos_in_data[2] #Falls 2D Plot -> z egal
+        print(f'Clicked on: {x}, {y}, {z}') if self.dims_to_plot == 3 else print(f'Clicked on: {x}, {y}') #Plot berücksichtigen
+        
+   
 # Hauptfenster mit Steuerungselementen
 class MainWindow(QMainWindow):
     def __init__(self):
