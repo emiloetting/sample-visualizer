@@ -108,6 +108,7 @@ class VispyWidget(QWidget):
 
         # Set Camera to correctly display initial plot
         self.set_camera(DEFAULT_DIMENSIONS)
+        self.set_camera_range(DEFAULT_DATA)
 
     def set_camera(self, dimensions):
         """Adapts Plot-Camera to the given dimensions"""
@@ -145,9 +146,39 @@ class VispyWidget(QWidget):
         norm_labels = (labels - labels.min()) / (labels.max() - labels.min() + 1e-10)
         color_map = vispy.color.get_colormap(COLORMAP)
         plot_colors = color_map.map(norm_labels)#[:, :3]
-        self.scatter.set_data(self.plot_data, edge_color='black', face_color=plot_colors, size=5)
-
+        self.scatter.set_data(self.plot_data, edge_color='black', face_color=plot_colors, size=5)   
+        self.set_camera_range(self.plot_data)
         self.canvas.update()
+        return
+    
+    def set_camera_range(self, data):
+        # Set Camera to correctly display plot
+        if self.dims_to_plot == 2:
+            data = data[:, :2] #zur Sicherheit nochmal einmal zu viel slicen
+            x_min, y_min = data.min(axis=0)
+            x_max, y_max = data.max(axis=0)
+            # Optionale Erweiterung um etwas Rand:
+            margin_x = (x_max - x_min) * 0.1    # 10% Rand
+            margin_y = (y_max - y_min) * 0.1
+            self.view.camera.set_range(
+                x=(x_min - margin_x, x_max + margin_x),
+                y=(y_min - margin_y, y_max + margin_y)
+            )
+
+        #Wenn 3D-Plot
+        elif self.dims_to_plot == 3:
+            data = data[:,:3] #doppelt schneiden hält besser
+            x_min, y_min, z_min = data.min(axis=0)
+            x_max, y_max, z_max = data.max(axis=0)
+            
+            margin_x = (x_max - x_min) * 0.1    #ebenfalls 10% Rand
+            margin_y = (y_max - y_min) * 0.1
+            margin_z = (z_max - z_min) * 0.1
+            self.view.camera.set_range(
+                x=(x_min - margin_x, x_max + margin_x),
+                y=(y_min - margin_y, y_max + margin_y),
+                z=(z_min - margin_z, z_max + margin_z)
+            )
         return
 
     def on_mouse_click(self, event):
@@ -353,7 +384,7 @@ class MainWindow(QMainWindow):
                 pygame.mixer.music.load(self.current_sample_path) # Lade die Sounddatei
                 pygame.mixer.music.play()
     
-    
+
 class DraggableLabel(QLabel):
     def __init__(self, text='', file_path=None, parent=None):
         super().__init__(text, parent)
