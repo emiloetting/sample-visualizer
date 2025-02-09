@@ -15,7 +15,8 @@ import dim_clustering as dc
 import os
 from scipy.spatial.distance import cdist
 from io import BytesIO
-
+import pygame
+import timeit
 
 
 # Constants
@@ -184,6 +185,11 @@ class MainWindow(QMainWindow):
         self.current_data = DEFAULT_DATA
         self.current_labels = DEFAULT_LABELS
         self.current_sample_path = None
+        self.setFocusPolicy(Qt.StrongFocus) # Damit Tastatureingaben empfangen werden können -> für Soundwiedergabe
+
+        # Pygame Mixer Initialisierung -> für Soundwiedergabe
+        pygame.mixer.init()
+
         #Titel des Fensters
         self.setWindowTitle("Audio Clustering Visualisierung")
         
@@ -259,7 +265,7 @@ class MainWindow(QMainWindow):
         #Widget für File-Name
         self.file_name_label = QLabel("No sample selected yet")
         self.file_name_label.setWordWrap(True)
-        self.file_name_label.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.TextSelectableByKeyboard)
+        self.file_name_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         control_layout.addWidget(self.file_name_label, 4, 2, 1, 2)
 
         #Widget für Bild der Sounddatei als Soundwave
@@ -268,7 +274,7 @@ class MainWindow(QMainWindow):
         self.soundwave_label.setMinimumSize(300, 50)  # Mindestgröße
         self.soundwave_label.setMaximumHeight(100)  # Maximale Höhe einstellen
         self.soundwave_label.setScaledContents(True) # Bildgröße an Label anpassen
-        control_layout.addWidget(self.soundwave_label, 5, 2, 0, 3)
+        control_layout.addWidget(self.soundwave_label, 5, 2, 1, 3)
         
         # Input-Box for Scaler
         self.scaler = QComboBox()
@@ -336,6 +342,18 @@ class MainWindow(QMainWindow):
         self.soundwave_label.set_file_path(sample_path)  # Datei-Pfad an das Label weitergeben
         return
 
+    def keyPressEvent(self, event):
+        """Fängt Tastatureingaben ab und spielt den Sound ab, wenn die Leertaste gedrückt wird."""
+        if event.key() == Qt.Key_Space and self.current_sample_path: # Nur bei Leertaste und wenn ein Sample ausgewählt wurd
+            if pygame.mixer.music.get_busy(): # Wenn bereits ein Sound abgespielt wird
+                print('Music playing')
+                pygame.mixer.music.stop()
+            else:
+                print('Loading and playing sound.')
+                pygame.mixer.music.load(self.current_sample_path) # Lade die Sounddatei
+                pygame.mixer.music.play()
+    
+    
 class DraggableLabel(QLabel):
     def __init__(self, text='', file_path=None, parent=None):
         super().__init__(text, parent)
@@ -358,9 +376,8 @@ class DraggableLabel(QLabel):
             # Optional: Vorschau für Drag (QPixmap des Labels)
             if self.pixmap():
                 drag.setPixmap(self.pixmap())
-                drag.setHotSpot(event.pos())
-
-            drag.exec(Qt.CopyAction)
+                drag.setHotSpot(event.position().toPoint())
+            drag.exec(Qt.CopyAction) 
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
