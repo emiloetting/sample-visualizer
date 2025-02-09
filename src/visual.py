@@ -5,8 +5,8 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QGridLayout,
     QPushButton, QSlider, QLabel, QComboBox
 )
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QPixmap
+from PySide6.QtCore import Qt, Signal, QMimeData, QUrl
+from PySide6.QtGui import QPixmap, QDrag
 import matplotlib.pyplot as plt
 from vispy import scene
 import vispy
@@ -183,7 +183,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.current_data = DEFAULT_DATA
         self.current_labels = DEFAULT_LABELS
-
+        self.current_sample_path = None
         #Titel des Fensters
         self.setWindowTitle("Audio Clustering Visualisierung")
         
@@ -197,6 +197,7 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(self.vispy_widget, stretch=1)
         self.vispy_widget.sampleSelected.connect(self.update_file_name) # Um Sample-Namen zu aktualisieren
         self.vispy_widget.sampleSelectedPath.connect(self.update_soundwave) # Um Sample-Ansicht zu aktualisieren
+        self.vispy_widget.sampleSelectedPath.connect(self.set_current_sample_path) # Um Sample-Pfad zu speichern
         
         # Steuerungspanel für Parameter
         control_widget = QWidget()
@@ -262,7 +263,7 @@ class MainWindow(QMainWindow):
         control_layout.addWidget(self.file_name_label, 4, 2, 1, 2)
 
         #Widget für Bild der Sounddatei als Soundwave
-        self.soundwave_label = QLabel("Hier wird die Soundwave angezeigt")
+        self.soundwave_label = DraggableLabel("Hier wird die Soundwave angezeigt")
         self.soundwave_label.setAlignment(Qt.AlignCenter)
         self.soundwave_label.setMinimumSize(300, 50)  # Mindestgröße
         self.soundwave_label.setMaximumHeight(100)  # Maximale Höhe einstellen
@@ -328,8 +329,38 @@ class MainWindow(QMainWindow):
             self.soundwave_label.setPixmap(pixmap)  # Setze das Bild in das QLabel
             buffer.close()  # Speicher freigeben
         return
+    
+    def set_current_sample_path(self, sample_path):
+        """Speichert den aktuellen Sample-Pfad und aktualisiert das DraggableLabel."""
+        self.current_sample_path = sample_path
+        self.soundwave_label.set_file_path(sample_path)  # Datei-Pfad an das Label weitergeben
+        return
 
+class DraggableLabel(QLabel):
+    def __init__(self, text='', file_path=None, parent=None):
+        super().__init__(text, parent)
+        self.file_path = file_path
 
+    def set_file_path(self, file_path):
+        """Setzt den Dateipfad für Drag-and-Drop."""
+        self.file_path = file_path
+
+    def mousePressEvent(self, event):
+        """Startet den Drag-Vorgang."""
+        if event.button() == Qt.LeftButton and self.file_path:
+            drag = QDrag(self)
+            mime_data = QMimeData()
+
+            # Übergib den gespeicherten Dateipfad
+            mime_data.setUrls([QUrl.fromLocalFile(self.file_path)])
+            drag.setMimeData(mime_data)
+
+            # Optional: Vorschau für Drag (QPixmap des Labels)
+            if self.pixmap():
+                drag.setPixmap(self.pixmap())
+                drag.setHotSpot(event.pos())
+
+            drag.exec(Qt.CopyAction)
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
