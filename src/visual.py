@@ -1,27 +1,34 @@
 import sys
+import soundfile as sf
 import numpy as np
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QGridLayout,
     QPushButton, QSlider, QLabel, QComboBox
 )
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QPixmap
+import matplotlib.pyplot as plt
 from vispy import scene
 import vispy
 import data_prep as dp
 import dim_clustering as dc
 import os
 from scipy.spatial.distance import cdist
+from io import BytesIO
+
+
 
 # Constants
 FILE_PATH = os.path.join(dp.CSV_OUTPUT_FOLDER, dp.OUTPUT_CSV_NAME)
 COLORMAP = 'viridis'
 
-DEFAULT_DIMENSIONS = 3
+DEFAULT_DIMENSIONS = 2
 DEFAULT_MIN_DIST = 0.1
 DEFAULT_N_NEIGHBORS = 30
 DEFAULT_EPS = 0.2 if DEFAULT_DIMENSIONS == 3 else 0.2
 DEFAULT_MIN_SAMPLES = 5 if DEFAULT_DIMENSIONS == 3 else 8
 DEFAULT_SCALER = 'MinMax'
+DOWNSAMPLING_FACTOR = 10 #higher = more downsampling
 
 df = dc.go(
     filepath=FILE_PATH,
@@ -37,10 +44,26 @@ DEFAULT_LABELS = df['label'].to_numpy()
 DEFAULT_DATA = df.drop(columns=['label']).to_numpy()
 DEFAULT_DATA_FRAME = df.copy()
 
+def plot_soundwave(sample_path: str):
+    buffer = BytesIO() #virtueller Speicher um Bild nicht auf Festplatte speichern zu müssen
+    data, samplerate = sf.read(sample_path)
+    data = data[::DOWNSAMPLING_FACTOR]
+    plt.figure(figsize=(20, 6), dpi=120) #Größe des Plots -> größer, damit bei bei fullscreen alles scharf bleibt
+    plt.plot(data)
+    plt.axis('off')
+    plt.gca().set_facecolor("none")  # Hintergrund transparent setzen
+    plt.gcf().set_facecolor("none")  # Hintergrund des gesamten Plots transparent
+    plt.grid(visible=False)  # Gitterlinien ausschalten
+    plt.savefig(buffer,format='png', bbox_inches='tight')
+    plt.close()
+    buffer.seek(0) #setze den "Lesekopf" auf den Anfang des Streams
+    return buffer
+
 
 # Vispy-Widget, das als Stub für die 3D-Visualisierung dient
 class VispyWidget(QWidget):
     sampleSelected = Signal(str)
+    sampleSelectedPath = Signal(str)
 
     def __init__(self, parent=None, dimensions=DEFAULT_DIMENSIONS, labels=DEFAULT_LABELS):
         super().__init__(parent)
@@ -148,7 +171,9 @@ class VispyWidget(QWidget):
         closest_sample = self.current_data_frame.iloc[closest_point]['filename']
         print(f'Closest Sample: {closest_sample}\n')
         self.selected_sample = closest_sample
+        sample_path = self.current_data_frame.iloc[closest_point]['path']
         self.sampleSelected.emit(closest_sample)
+        self.sampleSelectedPath.emit(sample_path)
     
 
 
@@ -171,6 +196,7 @@ class MainWindow(QMainWindow):
         self.vispy_widget = VispyWidget()
         main_layout.addWidget(self.vispy_widget, stretch=1)
         self.vispy_widget.sampleSelected.connect(self.update_file_name) # Um Sample-Namen zu aktualisieren
+        self.vispy_widget.sampleSelectedPath.connect(self.update_soundwave) # Um Sample-Ansicht zu aktualisieren
         
         # Steuerungspanel für Parameter
         control_widget = QWidget()
@@ -236,7 +262,12 @@ class MainWindow(QMainWindow):
         control_layout.addWidget(self.file_name_label, 4, 2, 1, 2)
 
         #Widget für Bild der Sounddatei als Soundwave
-
+        self.soundwave_label = QLabel("Hier wird die Soundwave angezeigt")
+        self.soundwave_label.setAlignment(Qt.AlignCenter)
+        self.soundwave_label.setMinimumSize(300, 50)  # Mindestgröße
+        self.soundwave_label.setMaximumHeight(100)  # Maximale Höhe einstellen
+        self.soundwave_label.setScaledContents(True) # Bildgröße an Label anpassen
+        control_layout.addWidget(self.soundwave_label, 5, 2, 0, 3)
         
         # Input-Box for Scaler
         self.scaler = QComboBox()
@@ -284,6 +315,21 @@ class MainWindow(QMainWindow):
     
     def update_file_name(self, sample_name: str):
         self.file_name_label.setText("Current Sample: " + sample_name)
+        return
+    
+    def update_soundwave(self, sample_path):
+        """
+        Aktualisiert das Soundwave-Label, wenn ein neues Sample ausgewählt wurde.
+        """
+        if sample_path:
+            buffer = plot_soundwave(sample_path)  # Soundwave in virtuellem Speicher
+            pixmap = QPixmap()
+            pixmap.loadFromData(buffer.getvalue(), format='PNG')  # Lade Bilddaten aus dem Speicher
+            self.soundwave_label.setPixmap(pixmap)  # Setze das Bild in das QLabel
+            buffer.close()  # Speicher freigeben
+        return
+
+
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
@@ -291,8 +337,3 @@ if __name__ == '__main__':
     win.resize(800, 600)
     win.show()
     sys.exit(app.exec())
-
-
-
-
-
